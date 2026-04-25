@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sec-earnings-workbench"
+version = "0.1.0"
+description = "SEC / Earnings / Company Research Workbench — CHP-hardened multi-agent research over AlphaVantage fundamentals + FRED macro context for company research, SEC deep dives, and Initiation of Coverage."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{name = "zan-maker"}]
+license = {text = "MIT"}
+keywords = ["ai", "agents", "research", "sec", "alphavantage", "fred", "chp", "multi-agent", "equity-research"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Financial and Insurance Industry",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+research-bench = "cme.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["cme*", "demo*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
