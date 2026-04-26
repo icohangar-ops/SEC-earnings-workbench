@@ -25,7 +25,7 @@ from cme.research import (
     ResearchWorkbench,
     SECDeepDiveBrief,
 )
-from cme.research.data import AlphaVantageClient, FredClient
+from cme.research.data import AlphaVantageClient, EdgarClient, EdgarError, FredClient
 
 
 def _load_dotenv(path: Path = Path(".env")) -> None:
@@ -83,6 +83,7 @@ def _emit(report, args: argparse.Namespace) -> int:
                 }
                 for t in report.turns
             ],
+            "edgar_filings": [f.as_dict() for f in report.edgar_filings],
             "artifact_title": report.artifact.title,
             "sections": [
                 {"heading": s["heading"], "bullets": s.get("bullets", [])}
@@ -153,12 +154,14 @@ def _cmd_initiation(args: argparse.Namespace) -> int:
 
 
 def _cmd_data(args: argparse.Namespace) -> int:
-    """Pull AV OVERVIEW + FRED macro panel for a single ticker; useful smoke test."""
+    """Pull AV OVERVIEW + FRED macro panel + EDGAR filings for a single ticker."""
     av = AlphaVantageClient()
     fred = FredClient()
+    edgar = EdgarClient()
     out = {
         "alphavantage_live": av.is_live,
         "fred_live": fred.is_live,
+        "edgar_live": edgar.is_live,  # always True; included for symmetry
     }
     if av.is_live and args.ticker:
         ov = av.overview(args.ticker)
@@ -175,6 +178,29 @@ def _cmd_data(args: argparse.Namespace) -> int:
             }
     if fred.is_live:
         out["macro_panel"] = fred.macro_panel()
+    if args.ticker:
+        try:
+            cik = edgar.cik_for(args.ticker)
+            if cik is None:
+                out["edgar"] = {"warning": f"no CIK match for ticker {args.ticker}"}
+            else:
+                recent = edgar.recent_filings(
+                    args.ticker,
+                    forms=["10-K", "10-Q", "8-K", "DEF 14A"],
+                    limit=8,
+                )
+                eight_k_sweep = edgar.eight_ks_since_last_periodic(args.ticker)
+                out["edgar"] = {
+                    "cik": cik,
+                    "company_name": edgar.company_name_for(args.ticker),
+                    "recent_filings": [f.as_dict() for f in recent],
+                    "eight_k_sweep_count": len(eight_k_sweep),
+                    "eight_k_sweep": [f.as_dict() for f in eight_k_sweep[:5]],
+                }
+        except EdgarError as exc:
+            out["edgar"] = {"error": str(exc)}
+        except Exception as exc:
+            out["edgar"] = {"error": f"{type(exc).__name__}: {exc}"}
     print(json.dumps(out, indent=2))
     return 0
 

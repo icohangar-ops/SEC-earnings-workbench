@@ -63,7 +63,15 @@ from cme.research.briefs import (
     ResearchTaskType,
     SECDeepDiveBrief,
 )
-from cme.research.data import AlphaVantageClient, AlphaVantageError, FredClient, FredError
+from cme.research.data import (
+    AlphaVantageClient,
+    AlphaVantageError,
+    EdgarClient,
+    EdgarError,
+    FilingRef,
+    FredClient,
+    FredError,
+)
 from cme.research.dossier_builders import build_decision_case
 
 
@@ -81,6 +89,7 @@ class ResearchSessionReport:
     audit: AuditTrail
     overview: Optional[Dict[str, Any]] = None
     macro: Optional[Dict[str, Dict[str, Any]]] = None
+    edgar_filings: List[FilingRef] = field(default_factory=list)
     data_warnings: List[str] = field(default_factory=list)
     turns: List[TurnResult] = field(default_factory=list)
 
@@ -123,6 +132,7 @@ class ResearchWorkbench:
         context: Optional[ContextEngine] = None,
         alpha_vantage: Optional[AlphaVantageClient] = None,
         fred: Optional[FredClient] = None,
+        edgar: Optional[EdgarClient] = None,
     ) -> None:
         if not agents:
             raise ValueError("ResearchWorkbench requires at least one MeshAgent")
@@ -131,6 +141,7 @@ class ResearchWorkbench:
         self.context = context or ContextEngine()
         self.alpha_vantage = alpha_vantage or AlphaVantageClient()
         self.fred = fred or FredClient()
+        self.edgar = edgar or EdgarClient()
         self._chp = CHPOrchestrator(registry=self.registry, context=self.context)
         self._mesh = EnterpriseOrchestrator(agents=self.agents, context=self.context)
 
@@ -142,8 +153,16 @@ class ResearchWorkbench:
         data_warnings: List[str] = []
         overview, income, cash_flow, earnings, quote = self._pull_alpha_vantage(brief, data_warnings)
         macro = self._pull_fred(data_warnings)
+        edgar_filings, eight_k_sweep, latest_10k, latest_10q = self._pull_edgar(brief, data_warnings)
 
-        self._seed_context(brief, case, overview=overview, macro=macro)
+        self._seed_context(
+            brief,
+            case,
+            overview=overview,
+            macro=macro,
+            filings=edgar_filings,
+            eight_k_sweep=eight_k_sweep,
+        )
 
         chp_report = self._chp.run_initial_session(
             case=case,
@@ -169,6 +188,10 @@ class ResearchWorkbench:
             earnings=earnings,
             quote=quote,
             macro=macro,
+            edgar_filings=edgar_filings,
+            eight_k_sweep=eight_k_sweep,
+            latest_10k=latest_10k,
+            latest_10q=latest_10q,
         )
         audit = build_audit_trail(
             turns=orchestration.turns,
@@ -177,6 +200,7 @@ class ResearchWorkbench:
             attack=attack,
             overview=overview,
             macro=macro,
+            edgar_filings=edgar_filings,
             extra_sources=[
                 f"Brief task type: {brief.task_type.value}",
             ],
@@ -195,6 +219,7 @@ class ResearchWorkbench:
             audit=audit,
             overview=overview,
             macro=macro,
+            edgar_filings=edgar_filings,
             data_warnings=data_warnings,
             turns=orchestration.turns,
         )
@@ -268,6 +293,46 @@ class ResearchWorkbench:
             warnings.append(f"FRED macro_panel failed: {exc}")
             return None
 
+    def _pull_edgar(
+        self, brief: ResearchBrief, warnings: List[str]
+    ) -> tuple:
+        """Return (recent_filings, 8k_sweep, latest_10k, latest_10q).
+
+        Filings are pulled directly from SEC EDGAR (no API key needed; rate-
+        limited on a 24h disk cache). On any failure we degrade gracefully and
+        emit a warning so the rest of the pipeline keeps running.
+        """
+        recent: List[FilingRef] = []
+        eight_k_sweep: List[FilingRef] = []
+        latest_10k: Optional[FilingRef] = None
+        latest_10q: Optional[FilingRef] = None
+        if not self.edgar or not self.edgar.is_live:
+            warnings.append("EDGAR_DISABLED — SEC filings not pulled.")
+            return recent, eight_k_sweep, latest_10k, latest_10q
+        # Choose forms by task type; SEC deep dive widens the net.
+        if isinstance(brief, SECDeepDiveBrief):
+            forms = list(brief.filings_in_scope) or ["10-K", "10-Q", "8-K", "DEF 14A"]
+            limit = 30
+        else:
+            forms = ["10-K", "10-Q", "8-K", "DEF 14A"]
+            limit = 12
+        try:
+            cik = self.edgar.cik_for(brief.ticker)
+            if cik is None:
+                warnings.append(
+                    f"EDGAR: no CIK match for ticker {brief.ticker} — filings not pulled."
+                )
+                return recent, eight_k_sweep, latest_10k, latest_10q
+            recent = self.edgar.recent_filings(brief.ticker, forms=forms, limit=limit)
+            latest_10k = self.edgar.latest_filing(brief.ticker, "10-K")
+            latest_10q = self.edgar.latest_filing(brief.ticker, "10-Q")
+            eight_k_sweep = self.edgar.eight_ks_since_last_periodic(brief.ticker)
+        except EdgarError as exc:
+            warnings.append(f"EDGAR fetch failed for {brief.ticker}: {exc}")
+        except Exception as exc:  # network unreachable, etc — never crash run()
+            warnings.append(f"EDGAR fetch raised {type(exc).__name__}: {exc}")
+        return recent, eight_k_sweep, latest_10k, latest_10q
+
     def _seed_context(
         self,
         brief: ResearchBrief,
@@ -275,6 +340,8 @@ class ResearchWorkbench:
         *,
         overview: Optional[Dict[str, Any]],
         macro: Optional[Dict[str, Dict[str, Any]]],
+        filings: Optional[List[FilingRef]] = None,
+        eight_k_sweep: Optional[List[FilingRef]] = None,
     ) -> None:
         self.context.upsert_entity(
             Entity(
@@ -301,6 +368,42 @@ class ResearchWorkbench:
                         "pe_ratio": overview.get("PERatio"),
                         "profit_margin": overview.get("ProfitMargin"),
                         "latest_quarter": overview.get("LatestQuarter"),
+                    },
+                )
+            )
+        # Seed EDGAR filings into shared context so agents (esp. Diligence) can
+        # cite real filing dates from their expand() phase.
+        for i, f in enumerate((filings or [])[:12]):
+            self.context.upsert_entity(
+                Entity(
+                    id=f"sec-filing-{i}-{f.accession_no}",
+                    type="sec_filing",
+                    attributes={
+                        "ticker": brief.ticker,
+                        "form": f.form,
+                        "filing_date": f.filing_date,
+                        "report_date": f.report_date,
+                        "accession_no": f.accession_no,
+                        "primary_doc_url": f.primary_doc_url,
+                        "is_xbrl": f.is_xbrl,
+                        "citation": f.citation(),
+                        "source": "SEC EDGAR",
+                    },
+                )
+            )
+        for j, f in enumerate(eight_k_sweep or []):
+            self.context.upsert_entity(
+                Entity(
+                    id=f"8k-sweep-{j}-{f.accession_no}",
+                    type="sec_filing_8k_sweep",
+                    attributes={
+                        "ticker": brief.ticker,
+                        "form": f.form,
+                        "filing_date": f.filing_date,
+                        "accession_no": f.accession_no,
+                        "primary_doc_url": f.primary_doc_url,
+                        "citation": f.citation(),
+                        "source": "SEC EDGAR (8-K sweep since latest periodic)",
                     },
                 )
             )
@@ -388,6 +491,10 @@ class ResearchWorkbench:
         earnings: Optional[Dict[str, Any]],
         quote: Optional[Dict[str, Any]],
         macro: Optional[Dict[str, Dict[str, Any]]],
+        edgar_filings: Optional[List[FilingRef]] = None,
+        eight_k_sweep: Optional[List[FilingRef]] = None,
+        latest_10k: Optional[FilingRef] = None,
+        latest_10q: Optional[FilingRef] = None,
     ) -> ResearchArtifact:
         if isinstance(brief, CompanyBrief):
             return build_business_model_memo(
@@ -398,6 +505,10 @@ class ResearchWorkbench:
                 income=income,
                 earnings=earnings,
                 macro=macro,
+                edgar_filings=edgar_filings,
+                eight_k_sweep=eight_k_sweep,
+                latest_10k=latest_10k,
+                latest_10q=latest_10q,
             )
         if isinstance(brief, SECDeepDiveBrief):
             return build_sec_deep_dive_memo(
@@ -409,6 +520,10 @@ class ResearchWorkbench:
                 cash_flow=cash_flow,
                 earnings=earnings,
                 macro=macro,
+                edgar_filings=edgar_filings,
+                eight_k_sweep=eight_k_sweep,
+                latest_10k=latest_10k,
+                latest_10q=latest_10q,
             )
         if isinstance(brief, InitiationBrief):
             return build_initiation_of_coverage(
@@ -420,6 +535,10 @@ class ResearchWorkbench:
                 quote=quote,
                 earnings=earnings,
                 macro=macro,
+                edgar_filings=edgar_filings,
+                eight_k_sweep=eight_k_sweep,
+                latest_10k=latest_10k,
+                latest_10q=latest_10q,
             )
         raise TypeError(f"Unsupported brief type: {type(brief).__name__}")
 

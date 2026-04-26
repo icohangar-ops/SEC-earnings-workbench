@@ -22,7 +22,7 @@ This workbench fuses three well-specified frameworks to fix all three:
 |---|---|
 | **Cognitive Mesh** | Three specialist agents (Fundamentals, Diligence, Markets) reason on a **shared ContextEngine**. Each agent runs through the Cognitive Mesh Protocol — visible expansion/compression cycles with grounding checks and self-improving playbooks. |
 | **Consensus Hardening Protocol (CHP)** | Wraps the multi-agent run in a **DecisionCase** with foundation disclosure → adversarial attack → R0 gate → lock progression. A finding can advance only when foundation passes; LOCKED requires third-party validation. |
-| **External grounding** | Every session pulls **AlphaVantage** fundamentals (OVERVIEW, INCOME_STATEMENT, BALANCE_SHEET, CASH_FLOW, EARNINGS, GLOBAL_QUOTE, NEWS_SENTIMENT) and a **FRED** macro panel (rates, yield curve, CPI, unemployment). Claims cite source + date — never bare percentages. |
+| **External grounding** | Every session pulls **AlphaVantage** fundamentals (OVERVIEW, INCOME_STATEMENT, BALANCE_SHEET, CASH_FLOW, EARNINGS, GLOBAL_QUOTE, NEWS_SENTIMENT), a **FRED** macro panel (rates, yield curve, CPI, unemployment), and **SEC EDGAR** filings (10-K / 10-Q / 8-K sweep / DEF 14A) with real accession numbers. Claims cite source + accession + filing date — never bare percentages. |
 
 Every line in the final memo traces back to:
 - the agent that produced it,
@@ -98,9 +98,10 @@ build DecisionCase + Dossier ──► CHP foundation disclosure + attack
   ▼                              initial PAYLOAD envelope
 pull AV fundamentals (OVERVIEW, INCOME_STATEMENT, ...)
 pull FRED macro panel (DGS10, T10Y2Y, CPI, ...)
+pull SEC EDGAR filings (10-K / 10-Q / 8-K sweep / DEF 14A)
   │
   ▼
-seed shared ContextEngine with company + AV entities + FRED entities
+seed shared ContextEngine with company + AV + FRED + filing entities
   │
   ▼
 EnterpriseOrchestrator
@@ -125,7 +126,7 @@ Lock progression is explicit: `EXPLORING → PROVISIONAL_LOCK → LOCKED`. The a
 
 ## Data layer
 
-Two providers, both stdlib-only HTTP, both with a 24-hour on-disk cache under `~/.cache/research-workbench/`.
+Three providers, all stdlib-only HTTP, all with a 24-hour on-disk cache under `~/.cache/research-workbench/`.
 
 ### AlphaVantage (`cme.research.data.alphavantage`)
 - `OVERVIEW` — sector, industry, market cap, P/E, profit margin, beta, 52-week range
@@ -141,9 +142,32 @@ Two providers, both stdlib-only HTTP, both with a 24-hour on-disk cache under `~
 - Custom panels: pass any dict of `{series_id: label}` to `FredClient.macro_panel()`
 - Series metadata + observation history available via `series()` and `latest_observation()`
 
+### SEC EDGAR (`cme.research.data.edgar`)
+
+EDGAR is the **primary-source grounding layer**: every filing-anchored claim in the artifact carries a real accession number and filing date pulled directly from SEC.
+
+- `cik_for(ticker)` / `company_name_for(ticker)` — ticker → CIK lookup via `company_tickers.json`
+- `submissions(ticker)` — full filing history (filings.recent + supplementary)
+- `recent_filings(ticker, forms=[...], limit=N)` — most-recent slice, optionally filtered to `["10-K", "10-Q", "8-K", "DEF 14A"]`
+- `latest_filing(ticker, form)` — most-recent filing of a single form
+- `eight_ks_since_last_periodic(ticker)` — implements the DiligenceAgent's "8-K sweep" rule (every 8-K filed *after* the latest 10-K/10-Q)
+- `company_facts(ticker)` — XBRL company-facts time series (financial concept history)
+- `full_text_search(query, ciks=..., forms=..., date_range=...)` — EFTS search wrapper
+- `fetch_document(url)` — raw HTML/text body for any filing
+- `extract_text(html)` — stdlib HTML→text (drops `<script>` / `<style>`, collapses whitespace)
+- `extract_section(text, "Item 1A. Risk Factors")` — best-effort 10-K item slicer
+
+**SEC fair-access policy.** EDGAR has no API key. SEC requires a `User-Agent` header that identifies the caller as `"<name> <email>"`. The default is sufficient for low-volume identification; set `EDGAR_USER_AGENT` for production use.
+
+**How EDGAR threads through the pipeline.**
+1. `ResearchWorkbench._pull_edgar()` calls `recent_filings`, `latest_filing(10-K/10-Q)`, and `eight_ks_since_last_periodic`.
+2. Filings are seeded as `Entity(type="sec_filing", ...)` on the shared `ContextEngine` so the **DiligenceAgent** reads real filing dates inside its expansion phase (`Reframe`/`Constraints` cite the latest 10-K accession).
+3. Artifacts emit a **"Recent SEC Filings"** bullet section with full citations (`[10-K filed 2025-10-31, accession 0000320193-25-000079]`).
+4. The audit trail's **External Grounding Sources** block summarises filings ingested per form (`10-K×1, 10-Q×3, 8-K×6, DEF 14A×1`) and pins the most-recent filing as the primary anchor.
+
 ### Graceful degradation
 
-If no API key is set, the corresponding client returns `None` and the artifact emits `"DATA NEEDED"` markers — matching the prompt-spec instruction. The pipeline still runs end-to-end.
+If no API key is set (AV / FRED) or `EDGAR_DISABLED=1`, the corresponding client is skipped and the artifact emits `"DATA NEEDED"` markers — matching the prompt-spec instruction. The pipeline still runs end-to-end and the test suite passes without any network access.
 
 ---
 
@@ -153,7 +177,8 @@ If no API key is set, the corresponding client returns `None` and the artifact e
                     ┌──────────────────────────┐
                     │   ContextEngine          │
    ┌───── shared ──▶│   subject + AV entities  │◀───── shared ─────┐
-   │                │   + FRED entities + CHP  │                   │
+   │                │   + FRED + EDGAR filings │                   │
+   │                │   + CHP foundation       │                   │
    │                └──────────────────────────┘                   │
    ▼                                                                ▼
 ┌────────────────────┐ ┌────────────────────┐ ┌────────────────────┐
@@ -202,7 +227,7 @@ research-bench initiation            # InitiationOfCoverage
   [--method EV/EBITDA|P/E|EV/Sales]  [--years N]
   [--driver D --driver D ...]  [--thesis "thesis seed"]
 
-research-bench data --ticker TICKER  # AV + FRED smoke test
+research-bench data --ticker TICKER  # AV + FRED + EDGAR smoke test
 research-bench chp-start             # Raw CHP capital allocation session
 research-bench chp-validate          # Apply third-party validation (LOCKED)
 ```

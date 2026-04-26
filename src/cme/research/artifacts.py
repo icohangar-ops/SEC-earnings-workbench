@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional
 from cme.agent import TurnResult
 from cme.chp.models import DecisionCase, SessionStatus
 from cme.research.briefs import CompanyBrief, InitiationBrief, SECDeepDiveBrief
+from cme.research.data import FilingRef
 
 
 @dataclass
@@ -179,6 +180,55 @@ def _income_summary_bullets(income: Optional[Dict[str, Any]]) -> List[str]:
     return out
 
 
+def _filings_bullets(
+    filings: Optional[List[FilingRef]],
+    *,
+    eight_k_sweep: Optional[List[FilingRef]] = None,
+    latest_10k: Optional[FilingRef] = None,
+    latest_10q: Optional[FilingRef] = None,
+    limit: int = 8,
+) -> List[str]:
+    """Render a 'Recent SEC Filings' bullet block from EdgarClient output.
+
+    Always returns at least one bullet so the section is auditable: when
+    nothing was pulled (offline / unknown ticker), we emit a 'DATA NEEDED'
+    marker matching the AV/FRED degradation pattern.
+    """
+    if not filings:
+        return ["DATA NEEDED — SEC EDGAR filings not pulled (offline or unknown ticker)."]
+    out: List[str] = []
+    if latest_10k is not None:
+        out.append(
+            f"Latest 10-K: filed {latest_10k.filing_date} (period {latest_10k.report_date}) "
+            f"— accession {latest_10k.accession_no} [SEC EDGAR]"
+        )
+    if latest_10q is not None:
+        out.append(
+            f"Latest 10-Q: filed {latest_10q.filing_date} (period {latest_10q.report_date}) "
+            f"— accession {latest_10q.accession_no} [SEC EDGAR]"
+        )
+    if eight_k_sweep:
+        dates = ", ".join(f.filing_date for f in eight_k_sweep[:5])
+        out.append(
+            f"8-Ks since latest periodic ({len(eight_k_sweep)}): {dates} [SEC EDGAR]"
+        )
+    elif eight_k_sweep is not None:
+        out.append("8-Ks since latest periodic: none — clean material-event slate.")
+    # Then a chronological tail of the recent filings (skipping ones we
+    # already named explicitly).
+    named_accessions = {
+        f.accession_no
+        for f in (latest_10k, latest_10q)
+        if f is not None
+    }
+    extras = [f for f in filings if f.accession_no not in named_accessions]
+    for f in extras[:limit]:
+        out.append(
+            f"{f.form}: filed {f.filing_date} — accession {f.accession_no} [SEC EDGAR]"
+        )
+    return out
+
+
 def _peer_table(overview: Optional[Dict[str, Any]], peers: List[str]) -> str:
     if not peers:
         return ""
@@ -199,6 +249,10 @@ def build_business_model_memo(
     income: Optional[Dict[str, Any]] = None,
     earnings: Optional[Dict[str, Any]] = None,
     macro: Optional[Dict[str, Dict[str, Any]]] = None,
+    edgar_filings: Optional[List[FilingRef]] = None,
+    eight_k_sweep: Optional[List[FilingRef]] = None,
+    latest_10k: Optional[FilingRef] = None,
+    latest_10q: Optional[FilingRef] = None,
 ) -> BusinessModelMemo:
     by_agent = _by_agent(turns)
     fundamentals = by_agent.get("fundamentals")
@@ -254,6 +308,15 @@ def build_business_model_memo(
         "bullets": _agent_bullets(markets),
     }
     macro_section = {"heading": "Macro Backdrop (FRED)", "bullets": _macro_bullets(macro)}
+    filings_section = {
+        "heading": "Primary Sources — Recent SEC Filings (EDGAR)",
+        "bullets": _filings_bullets(
+            edgar_filings,
+            eight_k_sweep=eight_k_sweep,
+            latest_10k=latest_10k,
+            latest_10q=latest_10q,
+        ),
+    }
     lock_section = {
         "heading": "Lock Status",
         "bullets": [
@@ -288,12 +351,13 @@ def build_business_model_memo(
             risks_section,
             triggers_section,
             macro_section,
+            filings_section,
             lock_section,
         ],
         sources=[
             "AlphaVantage OVERVIEW / INCOME_STATEMENT / EARNINGS",
             "FRED macro series (rates, yield curve, CPI, unemployment)",
-            "SEC EDGAR (10-K / 10-Q / DEF 14A — to be cited per claim)",
+            "SEC EDGAR — recent 10-K / 10-Q / 8-K / DEF 14A (citations in Recent SEC Filings)",
         ],
     )
 
@@ -308,6 +372,10 @@ def build_sec_deep_dive_memo(
     cash_flow: Optional[Dict[str, Any]] = None,
     earnings: Optional[Dict[str, Any]] = None,
     macro: Optional[Dict[str, Dict[str, Any]]] = None,
+    edgar_filings: Optional[List[FilingRef]] = None,
+    eight_k_sweep: Optional[List[FilingRef]] = None,
+    latest_10k: Optional[FilingRef] = None,
+    latest_10q: Optional[FilingRef] = None,
 ) -> SECDeepDiveMemo:
     by_agent = _by_agent(turns)
     fundamentals = by_agent.get("fundamentals")
@@ -330,6 +398,16 @@ def build_sec_deep_dive_memo(
         fcf_ni_bullets = ["DATA NEEDED — AV CASH_FLOW or INCOME_STATEMENT missing."]
 
     snapshot_section = {"heading": "Snapshot", "bullets": _overview_bullets(overview)}
+    filings_section = {
+        "heading": "0. Primary Filings in Scope (EDGAR)",
+        "bullets": _filings_bullets(
+            edgar_filings,
+            eight_k_sweep=eight_k_sweep,
+            latest_10k=latest_10k,
+            latest_10q=latest_10q,
+            limit=12,
+        ),
+    }
     biz_section = {
         "heading": "1. Business Model & Moat",
         "bullets": _agent_bullets(fundamentals),
@@ -338,12 +416,23 @@ def build_sec_deep_dive_memo(
         "heading": "2. Financial Health",
         "bullets": _income_summary_bullets(income) + fcf_ni_bullets,
     }
+    redflag_bullets = _agent_bullets(diligence) + (
+        [f"Focus: {f}" for f in brief.red_flag_focus] if brief.red_flag_focus else []
+    )
+    if eight_k_sweep:
+        redflag_bullets.append(
+            f"8-K sweep since latest periodic surfaced {len(eight_k_sweep)} material-event "
+            f"filings — review {', '.join(f.filing_date for f in eight_k_sweep[:3])} for "
+            "Item 1.01 / 2.02 / 5.02 / 8.01 disclosures [SEC EDGAR]"
+        )
+    elif eight_k_sweep is not None:
+        redflag_bullets.append(
+            "8-K sweep since latest periodic: empty — no fresh material-event disclosures "
+            "to qualify the periodic-filing read."
+        )
     redflag_section = {
         "heading": "3. Red Flag Scan",
-        "bullets": _agent_bullets(diligence)
-        + (
-            [f"Focus: {f}" for f in brief.red_flag_focus] if brief.red_flag_focus else []
-        ),
+        "bullets": redflag_bullets,
     }
     governance_section = {
         "heading": "4. Management & Governance",
@@ -393,6 +482,7 @@ def build_sec_deep_dive_memo(
         bottom_line=bottom,
         sections=[
             snapshot_section,
+            filings_section,
             biz_section,
             health_section,
             redflag_section,
@@ -403,7 +493,7 @@ def build_sec_deep_dive_memo(
             lock_section,
         ],
         sources=[
-            "SEC EDGAR — 10-K, 10-Q, 8-K, DEF 14A (per filing date)",
+            "SEC EDGAR — 10-K, 10-Q, 8-K, DEF 14A (per filing date, accession cited)",
             "AlphaVantage OVERVIEW / INCOME_STATEMENT / CASH_FLOW / EARNINGS",
             "FRED macro panel",
         ],
@@ -420,6 +510,10 @@ def build_initiation_of_coverage(
     quote: Optional[Dict[str, Any]] = None,
     earnings: Optional[Dict[str, Any]] = None,
     macro: Optional[Dict[str, Dict[str, Any]]] = None,
+    edgar_filings: Optional[List[FilingRef]] = None,
+    eight_k_sweep: Optional[List[FilingRef]] = None,
+    latest_10k: Optional[FilingRef] = None,
+    latest_10q: Optional[FilingRef] = None,
 ) -> InitiationOfCoverage:
     by_agent = _by_agent(turns)
     fundamentals = by_agent.get("fundamentals")
@@ -494,6 +588,15 @@ def build_initiation_of_coverage(
             "Disclosure boilerplate — to be appended per house style",
         ],
     }
+    filings_section = {
+        "heading": "Appendix B. Primary Sources — Recent SEC Filings (EDGAR)",
+        "bullets": _filings_bullets(
+            edgar_filings,
+            eight_k_sweep=eight_k_sweep,
+            latest_10k=latest_10k,
+            latest_10q=latest_10q,
+        ),
+    }
     macro_section = {"heading": "Macro Backdrop (FRED)", "bullets": _macro_bullets(macro)}
     lock_section = {
         "heading": "Lock + Replay",
@@ -525,13 +628,14 @@ def build_initiation_of_coverage(
             valuation_section,
             risks_section,
             appendix_section,
+            filings_section,
             macro_section,
             lock_section,
         ],
         sources=[
             "AlphaVantage OVERVIEW / GLOBAL_QUOTE / INCOME_STATEMENT / EARNINGS",
             "FRED macro panel",
-            "SEC EDGAR — full filings",
+            "SEC EDGAR — recent filings cited per accession in Appendix B",
             "Peer comp data (per-ticker AV OVERVIEW pulls)",
         ],
     )

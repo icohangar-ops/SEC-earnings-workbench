@@ -15,6 +15,7 @@ from typing import Any, Dict, Iterable, List, Optional
 from cme.agent import TurnResult
 from cme.chp.models import DecisionCase, FoundationAttack, FoundationDisclosure
 from cme.protocol import ExpansionStep, GroundingCheck
+from cme.research.data import FilingRef
 
 
 @dataclass
@@ -87,6 +88,7 @@ def build_audit_trail(
     attack: FoundationAttack,
     overview: Optional[Dict[str, Any]] = None,
     macro: Optional[Dict[str, Dict[str, Any]]] = None,
+    edgar_filings: Optional[List[FilingRef]] = None,
     extra_sources: Optional[List[str]] = None,
 ) -> AuditTrail:
     entries: List[AuditEntry] = []
@@ -144,6 +146,17 @@ def build_audit_trail(
         f"Key vulnerability: {disclosure.key_vulnerability}",
         f"Attack summary: {attack.attack_summary}",
     ]
+    if edgar_filings:
+        # Pull a primary anchor citation into the foundation findings — every
+        # claim in the artifact can then be traced back to at least one
+        # primary filing.
+        anchor = next(
+            (f for f in edgar_filings if f.form in {"10-K", "10-Q"}),
+            edgar_filings[0],
+        )
+        foundation_findings.append(
+            f"Primary filing anchor: {anchor.citation()} ({anchor.primary_doc_url})"
+        )
 
     external_sources: List[str] = []
     if overview:
@@ -154,6 +167,19 @@ def build_audit_trail(
     if macro:
         ids = ", ".join(sorted(macro.keys()))
         external_sources.append(f"FRED macro panel ({ids})")
+    if edgar_filings:
+        # Summarize counts per form so the audit-trail block is scannable.
+        by_form: Dict[str, int] = {}
+        for f in edgar_filings:
+            by_form[f.form] = by_form.get(f.form, 0) + 1
+        breakdown = ", ".join(f"{form}×{n}" for form, n in sorted(by_form.items()))
+        latest = max(edgar_filings, key=lambda f: f.filing_date)
+        external_sources.append(
+            f"SEC EDGAR — {len(edgar_filings)} filings ingested ({breakdown}); "
+            f"most recent: {latest.citation()}"
+        )
+    elif edgar_filings is not None:
+        external_sources.append("SEC EDGAR — no filings ingested (graceful degradation).")
     if extra_sources:
         external_sources.extend(extra_sources)
 

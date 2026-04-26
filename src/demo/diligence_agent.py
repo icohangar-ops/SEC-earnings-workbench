@@ -61,20 +61,54 @@ class DiligenceAgent(MeshAgent):
         )
 
     def expand(self, problem: str, context: Dict[str, Any]) -> List[ExpansionStep]:
+        # Pull EDGAR filings out of shared context so we can name real dates.
+        filings: List[Dict[str, Any]] = []
+        sweep: List[Dict[str, Any]] = []
+        for ent in context.get("entities", []) or []:
+            if ent.get("type") == "sec_filing":
+                filings.append(ent.get("attributes", {}) or {})
+            elif ent.get("type") == "sec_filing_8k_sweep":
+                sweep.append(ent.get("attributes", {}) or {})
+        latest_10k = next((f for f in filings if (f.get("form") or "").upper() == "10-K"), None)
+        latest_10q = next((f for f in filings if (f.get("form") or "").upper() == "10-Q"), None)
+        anchor_lines: List[str] = []
+        if latest_10k:
+            anchor_lines.append(
+                f"latest 10-K filed {latest_10k.get('filing_date')} (acc {latest_10k.get('accession_no')})"
+            )
+        if latest_10q:
+            anchor_lines.append(
+                f"latest 10-Q filed {latest_10q.get('filing_date')} (acc {latest_10q.get('accession_no')})"
+            )
+        anchor_blurb = (
+            "Anchor on " + "; ".join(anchor_lines) if anchor_lines else "Filings not yet pulled — degrade gracefully."
+        )
+        sweep_dates = ", ".join(s.get("filing_date", "") for s in sweep[:4])
+        sweep_blurb = (
+            f"8-K sweep since latest periodic returned {len(sweep)} filings ({sweep_dates}) — "
+            "every quantitative claim must be qualified against these material-event disclosures."
+            if sweep
+            else (
+                "8-K sweep is empty (or filings not yet pulled) — periodic-filing read is the "
+                "current source of truth."
+            )
+        )
+
         return [
             ExpansionStep(
                 label="Reframe",
                 content=(
                     f"Reframe '{problem[:80]}' as: where would an adversarial reader find a "
                     "fact pattern that contradicts the consensus narrative — in filings, "
-                    "governance, or earnings quality?"
+                    f"governance, or earnings quality? {anchor_blurb}"
                 ),
             ),
             ExpansionStep(
                 label="Constraints",
                 content=(
                     "Hard: every flag must cite a filing type + filing date. "
-                    "Soft: prefer YoY risk-factor diffs over snapshot lists."
+                    "Soft: prefer YoY risk-factor diffs over snapshot lists. "
+                    f"{sweep_blurb}"
                 ),
             ),
             ExpansionStep(
@@ -93,7 +127,9 @@ class DiligenceAgent(MeshAgent):
                     "reconciliation in the filing is mathematically complete."
                 ),
                 uncertainty_flags=[
-                    "Recent 8-K may already shift the read — sweep before locking",
+                    f"Recent 8-K sweep flagged {len(sweep)} filings — may shift the read"
+                    if sweep
+                    else "Recent 8-K may already shift the read — sweep before locking",
                 ],
             ),
             ExpansionStep(
