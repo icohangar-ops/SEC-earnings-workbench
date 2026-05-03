@@ -2,9 +2,13 @@
 
 CHP-hardened, shared-context platform where **Fundamentals**, **Diligence**, and **Markets** agents collaborate on **company research**, **SEC deep dives**, and **Initiation of Coverage** reports — every claim grounded in primary sources (SEC filings, AlphaVantage fundamentals, FRED macro series) with a single auditable reasoning trail.
 
+Now with **Microsoft Fabric + Azure AI Foundry** integration for cloud-native research pipelines.
+
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](tests/)
+[![Fabric](https://img.shields.io/badge/Microsoft-Fabric-0078D4)](https://fabric.microsoft.com)
+[![AI Foundry](https://img.shields.io/badge/Azure-AI%20Foundry-764ABC)](https://ai.azure.com)
 
 ---
 
@@ -294,6 +298,84 @@ The test suite covers all three task types (running without API keys via gracefu
 - **Treasury** — portfolio of public exposures with red-flag scans and macro overlay.
 - **Board prep** — peer / target packets with explicit rating + target + flip criteria.
 - **Equity research desk** — initiation drafts with citation discipline enforced at the artifact layer.
+
+---
+
+## Microsoft Fabric + Azure AI Foundry Integration
+
+The workbench now runs as a first-class Microsoft Fabric pipeline with AI-powered research agents via Azure AI Foundry.
+
+### Architecture (Fabric Mode)
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Azure AI Foundry (Kimi K2.6 / GPT-4o)             │
+│  ├─ Fundamentals Agent (AI-powered)                │
+│  ├─ Diligence Agent (AI-powered)                   │
+│  ├─ Markets Agent (AI-powered)                     │
+│  └─ CHP Foundation Adjudicator (AI-powered)        │
+└────────────────────┬────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────┐
+│  Microsoft Fabric Lakehouse (Delta Tables)          │
+│  ├─ sec_filings         — SEC EDGAR filing metadata │
+│  ├─ company_fundamentals — AlphaVantage snapshots    │
+│  ├─ macro_indicators    — FRED macro panel           │
+│  ├─ research_sessions   — CHP DecisionCase records   │
+│  ├─ agent_outputs       — Per-agent turn results     │
+│  ├─ research_artifacts  — Final research reports     │
+│  └─ audit_trail         — Per-claim provenance       │
+└─────────────────────────────────────────────────────┘
+```
+
+### Fabric Notebooks
+
+Two notebooks in `notebooks/`:
+
+| Notebook | Purpose |
+|---|---|
+| `fabric_setup_lakehouse.py` | Create all 7 Delta tables with seed data |
+| `fabric_research_pipeline.py` | Full end-to-end AI-powered research pipeline |
+
+### Configuration
+
+```bash
+# .env
+AZURE_AI_ENDPOINT=https://<resource>.services.ai.azure.com/openai/v1
+AZURE_AI_KEY=<api-key>
+AZURE_AI_DEPLOYMENT=Kimi-K2.6
+FABRIC_WORKSPACE_ID=<workspace-guid>
+FABRIC_LAKEHOUSE_ID=<lakehouse-guid>
+ALPHAVANTAGE_API_KEY=<key>
+FRED_API_KEY=<key>
+```
+
+### Delta Table Schema
+
+| Table | Key Columns |
+|---|---|
+| `sec_filings` | ticker, form, filing_date, accession_no, primary_document, is_xbrl |
+| `company_fundamentals` | ticker, sector, industry, market_cap, pe_ratio, profit_margin, revenue_ttm |
+| `macro_indicators` | series_id, label, value, as_of (FRED DGS10, T10Y2Y, CPIAUCSL, UNRATE) |
+| `research_sessions` | decision_id, ticker, task_type, status, foundation_score, origin_model |
+| `agent_outputs` | decision_id, agent_name, recommendation, confidence, produces, consumes |
+| `research_artifacts` | decision_id, artifact_type, title, lock_state, rating_seed, target_price |
+| `audit_trail` | decision_id, agent, claim, grounding_source, grounding_confidence, risk_flag |
+
+### Fabric Notebook Quick Start
+
+1. In Fabric workspace, create a new notebook
+2. Attach the Lakehouse via "From OneLake catalog"
+3. Paste `fabric_setup_lakehouse.py` cells to create tables
+4. Paste `fabric_research_pipeline.py` cells and configure the ticker/task at Cell 6
+5. Run all cells — the pipeline pulls data, runs 3 AI agents + CHP, and writes results
+
+### New Source Modules
+
+| Module | Purpose |
+|---|---|
+| `cme.ai.foundry` | Azure AI Foundry client (OpenAI-compatible) |
+| `cme.fabric.client` | Fabric REST API client (Lakehouse metadata) |
 
 ---
 
