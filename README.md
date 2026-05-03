@@ -324,18 +324,20 @@ The workbench now runs as a first-class Microsoft Fabric pipeline with AI-powere
 │  ├─ research_sessions   — CHP DecisionCase records   │
 │  ├─ agent_outputs       — Per-agent turn results     │
 │  ├─ research_artifacts  — Final research reports     │
+│  ├─ peer_comparisons    — Cross-company batch results │
 │  └─ audit_trail         — Per-claim provenance       │
 └─────────────────────────────────────────────────────┘
 ```
 
 ### Fabric Notebooks
 
-Two notebooks in `notebooks/`:
+Three notebooks in `notebooks/`:
 
 | Notebook | Purpose |
 |---|---|
-| `fabric_setup_lakehouse.py` | Create all 7 Delta tables with seed data |
-| `fabric_research_pipeline.py` | Full end-to-end AI-powered research pipeline |
+| `fabric_setup_lakehouse.py` | Create all 8 Delta tables with seed data |
+| `fabric_research_pipeline.py` | Full end-to-end AI-powered research pipeline (single company) |
+| `fabric_peer_batch.py` | Peer batch processing: runs full pipeline for each company, then cross-company comparative analysis |
 
 ### Configuration
 
@@ -360,15 +362,26 @@ FRED_API_KEY=<key>
 | `research_sessions` | decision_id, ticker, task_type, status, foundation_score, origin_model |
 | `agent_outputs` | decision_id, agent_name, recommendation, confidence, produces, consumes |
 | `research_artifacts` | decision_id, artifact_type, title, lock_state, rating_seed, target_price |
+| `peer_comparisons` | batch_id, primary_ticker, peer_tickers, comparative_md, avg_foundation_score, duration_seconds |
 | `audit_trail` | decision_id, agent, claim, grounding_source, grounding_confidence, risk_flag |
 
 ### Fabric Notebook Quick Start
 
+**Single-company pipeline:**
 1. In Fabric workspace, create a new notebook
 2. Attach the Lakehouse via "From OneLake catalog"
 3. Paste `fabric_setup_lakehouse.py` cells to create tables
 4. Paste `fabric_research_pipeline.py` cells and configure the ticker/task at Cell 6
 5. Run all cells — the pipeline pulls data, runs 3 AI agents + CHP, and writes results
+
+**Peer batch pipeline:**
+1. Run `fabric_setup_lakehouse.py` first (creates the `peer_comparisons` table)
+2. Paste `fabric_peer_batch.py` cells into a new notebook
+3. Edit Cell 6 (`BATCH_CONFIG`) to set your primary company and peers
+4. Run all cells — the pipeline processes each company, then produces a cross-company comparative analysis
+5. All results (per-company + comparative) are written to Delta tables
+
+**Rate-limit awareness:** AlphaVantage free tier allows 25 calls/day, 5/min. The peer batch notebook tracks calls and enforces delays between requests. For 4 companies, expect ~16 AV calls (4 calls x 4 companies) + ~21 AI calls (5 per company + 1 comparative). Total batch runtime: 20-40 minutes depending on AI latency.
 
 ### New Source Modules
 
