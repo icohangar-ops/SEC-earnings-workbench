@@ -20,7 +20,7 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
 ]
-dependencies = []
+dependencies = ["sqlalchemy>=2.0", "psycopg2-binary>=2.9"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
