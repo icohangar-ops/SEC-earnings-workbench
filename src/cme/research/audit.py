@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional
 
 from cme.agent import TurnResult
+from cme.chp.certification import ProofCertificate, build_proof_certificates
 from cme.chp.models import DecisionCase, FoundationAttack, FoundationDisclosure
 from cme.protocol import ExpansionStep, GroundingCheck
 from cme.research.data import FilingRef
@@ -46,6 +47,7 @@ class AuditTrail:
     failure_modes: List[str] = field(default_factory=list)
     context_writes: List[str] = field(default_factory=list)
     external_sources: List[str] = field(default_factory=list)
+    proof_certificates: List[ProofCertificate] = field(default_factory=list)
 
     def render(self) -> str:
         lines = ["## Audit Trail", ""]
@@ -68,6 +70,11 @@ class AuditTrail:
             lines.append("### Detected Failure Modes")
             for m in self.failure_modes:
                 lines.append(f"- {m}")
+            lines.append("")
+        if self.proof_certificates:
+            lines.append("### Proof-Carrying Claim Gates")
+            for cert in self.proof_certificates:
+                lines.append(cert.render())
             lines.append("")
         lines.append("### Per-Claim Provenance")
         for e in self.entries:
@@ -183,6 +190,8 @@ def build_audit_trail(
     if extra_sources:
         external_sources.extend(extra_sources)
 
+    proof_certificates = build_proof_certificates(entries)
+
     return AuditTrail(
         entries=entries,
         foundation_findings=foundation_findings,
@@ -192,6 +201,7 @@ def build_audit_trail(
         failure_modes=failure_modes,
         context_writes=context_writes,
         external_sources=external_sources,
+        proof_certificates=proof_certificates,
     )
 
 

@@ -30,6 +30,7 @@ from cme.chp.payloads import (
     validate_payload_envelope,
 )
 from cme.chp.gates import evaluate_phase_gate, evaluate_r0_gate
+from cme.chp.certification import ProofCertificate, build_proof_certificates, certify_claim
 from cme.chp.orchestrator import CHPOrchestrator, CHPReport
 from cme.chp.registry import DecisionRegistry
 from cme.chp.validators import apply_third_party_validation
@@ -47,6 +48,7 @@ __all__ = [
     "ModelTier",
     "Phase",
     "PayloadEnvelope",
+    "ProofCertificate",
     "RoundRecord",
     "SessionStatus",
     "ThirdPartyValidation",
@@ -55,6 +57,8 @@ __all__ = [
     "apply_third_party_validation",
     "assess_model_parity",
     "build_payload_envelope",
+    "build_proof_certificates",
+    "certify_claim",
     "evaluate_phase_gate",
     "evaluate_r0_gate",
     "extract_payload_id",
