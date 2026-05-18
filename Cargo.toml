@@ -1,0 +1,16 @@
+[package]
+name = "sec-earnings-workbench"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "SEC filing and earnings analysis workbench for the Cubiczan ML ecosystem"
+
+[dependencies]
+cubiczan-ml-core = { path = "../cubiczan-ml-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+regex = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
