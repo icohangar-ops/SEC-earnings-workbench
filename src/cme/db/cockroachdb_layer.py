@@ -40,12 +40,7 @@ logger = logging.getLogger("sec_earnings_workbench.db")
 # Configuration
 # ---------------------------------------------------------------------------
 
-COCKROACH_URL = (
-    "cockroachdb+psycopg2://cubiczan:oY-hPkgXtZjc6kGqY67Gyg@"
-    "vortex-giraffe-15678.jxf.gcp-us-east1.cockroachlabs.cloud:26257/"
-    "sec_earnings_workbench?sslmode=require"
-)
-DATABASE_URL = os.getenv("SEW_DATABASE_URL", COCKROACH_URL)
+DATABASE_URL = os.environ.get("SEW_DATABASE_URL", "")
 
 engine = create_engine(
     DATABASE_URL,
