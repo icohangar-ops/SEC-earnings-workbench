@@ -7,7 +7,7 @@ license = "MIT"
 description = "SEC filing and earnings analysis workbench for the Cubiczan ML ecosystem"
 
 [dependencies]
-cubiczan-ml-core = { path = "../cubiczan-ml/crates/cubiczan-ml-core" }
+cubiczan-ml-core = { git = "https://github.com/icohangar-ops/cubiczan-ml" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }

@@ -41,7 +41,7 @@ Designed for **corp dev, treasury, and board prep** around peers, targets, and p
 ## Quick start
 
 ```bash
-git clone https://github.com/zan-maker/sec-earnings-workbench.git
+git clone https://github.com/icohangar-ops/SEC-earnings-workbench.git
 cd sec-earnings-workbench
 pip install -e .
 
