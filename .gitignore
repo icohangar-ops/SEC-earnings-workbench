@@ -16,3 +16,5 @@ htmlcov/
 .ruff_cache/
 node_modules/
 .cache/
+
+target/

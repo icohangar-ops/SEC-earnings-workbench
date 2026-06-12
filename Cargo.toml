@@ -1,16 +1,16 @@
 [package]
 name = "sec-earnings-workbench"
-version.workspace = true
-edition.workspace = true
-authors.workspace = true
-license.workspace = true
+version = "0.1.0"
+edition = "2021"
+authors = ["Shyam Desigan <sam@cubiczan.com>"]
+license = "MIT"
 description = "SEC filing and earnings analysis workbench for the Cubiczan ML ecosystem"
 
 [dependencies]
-cubiczan-ml-core = { path = "../cubiczan-ml-core" }
-serde = { workspace = true }
-serde_json = { workspace = true }
-chrono = { workspace = true }
-regex = { workspace = true }
-thiserror = { workspace = true }
-anyhow = { workspace = true }
+cubiczan-ml-core = { path = "../cubiczan-ml/crates/cubiczan-ml-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+regex = "1"
+thiserror = "2"
+anyhow = "1"
