@@ -392,6 +392,29 @@ FRED_API_KEY=<key>
 
 ---
 
+## Rust analysis crate
+
+Alongside the Python workbench, the repository ships a standalone Rust crate (`Cargo.toml`, `src/*.rs`) that implements a self-contained SEC filing and earnings analysis pipeline. It operates on raw filing text and structured inputs, with no dependency on the Python package.
+
+| Module | Role |
+|---|---|
+| `parser` | Filing text parsing and section extraction (`FilingParser`) |
+| `sentiment` | Earnings-call and management-tone sentiment scoring (`EarningsSentimentAnalyzer`) |
+| `risk` | Risk-factor extraction and categorisation (`RiskFactorExtractor`) |
+| `financials` | Financial ratio and period extraction (`FinancialExtractor`) |
+| `insider` | Insider-trade summarisation and unusual-activity detection (`InsiderAnalyzer`) |
+| `earnings` | Earnings-surprise, consistency, and guidance analysis (`EarningsAnalyzer`) |
+| `pipeline` | End-to-end analysis pipeline with watchlist alerts (`AnalysisPipeline`) |
+
+```bash
+cargo check
+cargo test
+```
+
+The crate depends on `cubiczan-ml-core` (pulled as a git dependency); a network connection is required for the first build. Both the Rust crate and the Python package are compile-checked in CI (`.github/workflows/ci.yml`).
+
+---
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
