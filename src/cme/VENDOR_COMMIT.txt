@@ -1,0 +1,29 @@
+Vendored-copy pin for the meshcfo context engine
+================================================
+
+Upstream engine  : Context Engine (CME engine family)
+Upstream repo    : https://github.com/icohangar-ops/meshcfo
+Upstream path    : src/cme/context.py
+Pinned commit    : e87789be267e675fc166d1088db3e19159f0fed3
+Pin date         : 2026-09-20
+Sync status      : keep-in-sync — this file is a vendored copy, not the canonical source
+
+Scope of this copy
+------------------
+context.py only (the deterministic context/memory engine). meshcfo's other
+CME-family modules (agent.py, orchestrator.py, bridge.py, crewai_chp.py, ...)
+are NOT vendored here.
+
+Intentional local deltas (preserve these when syncing — do not "fix" them
+by copying the canonical file over this copy wholesale)
+- The keep-in-sync header comment block at the top of context.py (comment
+  only). The code body is byte-identical to meshcfo/src/cme/context.py at
+  the pinned commit (verified sha256 d8348bda195fc5983dd3c9945b8e0c9aa9a332b2d722af869bccde7554fec89a
+  before the header was added).
+
+Refresh procedure
+-----------------
+1. Diff this file against meshcfo/src/cme/context.py at the pinned commit,
+   applying any intentional local deltas above.
+2. Run this repo's lint/tests.
+3. Update the pinned commit here and in the vendored file's header.
