@@ -453,3 +453,17 @@ cognitive-mesh-orchestrator 0.1.0 | [Protocol Docs](https://codeberg.org/cubicza
 
 [![Demo Video](https://img.shields.io/badge/Watch_Demo-3min-blue)](docs/media/SEC-earnings-workbench-demo.mp4)
 
+
+## Propagation decisions
+
+Decisions from the portfolio propagation matrix (SecOps/Gov wave C), recorded
+per the adopt-or-reverse contract. Revisit triggers are binding.
+
+### Row 35 — rubric chain: REVERSED
+
+the workbench enforces deterministic R0 and model-parity gates in its orchestrator and CHP models (src/cme/chp/orchestrator.py '## R0 Gate', src/cme/chp/models.py ModelParityCheck) — deterministic, reproducible checks that a subjective rubric chain would only sit beside, not strengthen.
+
+**Revisit trigger:** a genuinely subjective quality dimension appears in this
+repo's output that no deterministic gate can decide (e.g. prose quality in
+user-facing deliverables). Then author the rubric against the canonical
+chain shape rather than a local one.
