@@ -1,3 +1,11 @@
+# VENDORED COPY — keep in sync with the canonical source.
+#
+# Vendored from the CME context engine (icohangar-ops/meshcfo,
+# src/cme/context.py) at commit e87789be267e675fc166d1088db3e19159f0fed3.
+# Check the canonical repo for updates before modifying locally; this
+# copy's scope and intentional local deltas are recorded in VENDOR_COMMIT.txt
+# beside this file.
+
 """Context Engine.
 
 Implements the Context Engineering Framework's memory architecture:
